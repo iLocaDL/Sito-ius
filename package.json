@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "csi:update": "node scripts/fetch-csi-team-data.mjs",
+    "csi:update:scheduled": "node scripts/fetch-csi-team-data.mjs --scheduled",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

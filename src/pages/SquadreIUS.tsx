@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { Team, Player, Match } from '../types';
+import { Team, Player, Match, CsiMatch } from '../types';
+import { iusACsiData } from '../data/ius-a-csi';
 
 const teams: Team[] = [
   {
@@ -47,6 +48,148 @@ const matches: Match[] = [
   { id: '6', date: '2025-12-14', opponent: 'Piccoli Campioni', location: 'Campo Juniores', teamId: '3' },
   { id: '7', date: '2025-12-21', opponent: 'Young Stars', location: 'Campo Juniores', teamId: '3' },
 ];
+
+const formatCsiDate = (date: string) =>
+  new Date(`${date}T00:00:00`).toLocaleDateString('it-IT', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+const formatCsiDateTime = (date: string) =>
+  new Intl.DateTimeFormat('it-IT', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+    timeZone: 'Europe/Rome',
+  }).format(new Date(date));
+
+const resultLabels = {
+  W: 'Vittoria',
+  D: 'Pareggio',
+  L: 'Sconfitta',
+} as const;
+
+function MatchCard({ title, match, showResult }: { title: string; match: CsiMatch | null; showResult?: boolean }) {
+  return (
+    <div className="p-5 bg-gray-50 rounded border-l-4 border-[#bfa13f] h-full">
+      <h4 className="text-lg font-bold text-[#766648] mb-4">{title}</h4>
+      {match ? (
+        <div className="space-y-3">
+          <div>
+            <div className="font-bold text-[#766648]">{formatCsiDate(match.date)}</div>
+            <div className="text-sm text-gray-600">Ore {match.time}</div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 text-gray-800">
+            <span className="font-semibold">{match.home_team}</span>
+            <span className="text-sm text-gray-500">vs</span>
+            <span className="font-semibold text-right">{match.away_team}</span>
+          </div>
+
+          {match.home_score !== null && match.away_score !== null ? (
+            <div className="inline-flex items-center rounded bg-white px-3 py-2 font-bold text-[#766648] shadow-sm">
+              {match.home_score} - {match.away_score}
+            </div>
+          ) : (
+            <div className="inline-flex items-center rounded bg-white px-3 py-2 text-sm font-semibold text-[#766648] shadow-sm">
+              Da giocare
+            </div>
+          )}
+
+          {showResult && match.result_for_ius_a && (
+            <div className="text-sm text-gray-700">
+              Esito Ius A:{' '}
+              <span className="font-bold text-[#766648]">
+                {resultLabels[match.result_for_ius_a]} ({match.result_for_ius_a === 'D' ? 'N' : match.result_for_ius_a === 'L' ? 'P' : 'V'})
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-gray-600">Dato non disponibile.</p>
+      )}
+    </div>
+  );
+}
+
+function IusACompetitionBlock() {
+  if (!iusACsiData.available || iusACsiData.standings.length === 0) {
+    return (
+      <div className="mt-8 p-5 bg-gray-50 rounded border-l-4 border-[#bfa13f] text-gray-700">
+        Dati partite e classifica temporaneamente non disponibili.
+      </div>
+    );
+  }
+
+  return (
+    <section className="mt-8 border-t-2 border-[#bfa13f] pt-8">
+      <div className="mb-5 flex flex-col gap-2 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+        {iusACsiData.updated_at && (
+          <p>
+            Ultimo aggiornamento:{' '}
+            <span className="font-semibold text-[#766648]">{formatCsiDateTime(iusACsiData.updated_at)}</span>
+          </p>
+        )}
+        {iusACsiData.stale && (
+          <p className="font-semibold text-[#766648]">Dati aggiornati all'ultimo recupero disponibile.</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <MatchCard title="Prossima partita" match={iusACsiData.next_match} />
+        <MatchCard title="Ultima partita" match={iusACsiData.last_match} showResult />
+      </div>
+
+      <div className="mt-8">
+        <h3 className="text-xl font-bold text-[#766648] mb-4 pb-2 border-b-2 border-[#bfa13f]">
+          Classifica attuale
+        </h3>
+        <div className="overflow-x-auto rounded border border-[#bfa13f]">
+          <table className="min-w-[760px] w-full text-sm">
+            <thead className="bg-[#bfa13f] text-[#766648]">
+              <tr>
+                <th className="px-3 py-3 text-left">#</th>
+                <th className="px-3 py-3 text-left">Squadra</th>
+                <th className="px-3 py-3 text-right">Pt</th>
+                <th className="px-3 py-3 text-right">PG</th>
+                <th className="px-3 py-3 text-right">V</th>
+                <th className="px-3 py-3 text-right">N</th>
+                <th className="px-3 py-3 text-right">P</th>
+                <th className="px-3 py-3 text-right">GF</th>
+                <th className="px-3 py-3 text-right">GS</th>
+                <th className="px-3 py-3 text-right">DR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {iusACsiData.standings.map((row) => {
+                const isIusA = row.team.toLowerCase() === 'ius a';
+
+                return (
+                  <tr
+                    key={`${row.rank}-${row.team}`}
+                    className={`border-t border-gray-200 ${isIusA ? 'bg-[#fff4cc] font-bold text-[#766648]' : 'bg-white text-gray-700'}`}
+                  >
+                    <td className="px-3 py-3">{row.rank}</td>
+                    <td className="px-3 py-3 whitespace-nowrap">{row.team}</td>
+                    <td className="px-3 py-3 text-right">{row.points}</td>
+                    <td className="px-3 py-3 text-right">{row.played}</td>
+                    <td className="px-3 py-3 text-right">{row.wins}</td>
+                    <td className="px-3 py-3 text-right">{row.draws}</td>
+                    <td className="px-3 py-3 text-right">{row.losses}</td>
+                    <td className="px-3 py-3 text-right">{row.goals_for}</td>
+                    <td className="px-3 py-3 text-right">{row.goals_against}</td>
+                    <td className="px-3 py-3 text-right">{row.goal_diff}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 interface SquadreIUSProps {
   searchQuery?: string;
@@ -152,6 +295,8 @@ export default function SquadreIUS({ searchQuery }: SquadreIUSProps) {
                     </div>
                   </div>
                 </div>
+
+                {team.id === '1' && <IusACompetitionBlock />}
               </div>
             )}
           </div>

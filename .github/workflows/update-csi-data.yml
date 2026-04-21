@@ -1,0 +1,41 @@
+name: Update CSI team data
+
+on:
+  schedule:
+    # 22:00 Europe/Rome is 20:00 UTC during CEST and 21:00 UTC during CET.
+    - cron: '0 20,21 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-csi-team-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      CSI_UPDATE_DAY: Sunday
+      CSI_UPDATE_TIME: '22:00'
+      CSI_UPDATE_TIMEZONE: Europe/Rome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - if: github.event_name == 'schedule'
+        run: npm run csi:update:scheduled
+      - if: github.event_name == 'workflow_dispatch'
+        run: npm run csi:update
+      - run: npm run build
+      - name: Commit updated local data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/ius-a-csi.ts docs
+          git diff --cached --quiet || git commit -m "Update CSI Ius A data"
+          git push
