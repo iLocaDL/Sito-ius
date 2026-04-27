@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -11,6 +11,7 @@ const DEFAULT_SCHEDULE_TIME = '22:00';
 const DEFAULT_SCHEDULE_TIMEZONE = 'Europe/Rome';
 const rootDir = process.cwd();
 const outputFile = path.join(rootDir, 'src', 'data', 'ius-a-csi.ts');
+const tempOutputFile = `${outputFile}.tmp`;
 const isScheduledRun = process.argv.includes('--scheduled');
 
 const unavailableData = {
@@ -56,6 +57,15 @@ const numberFromText = (value) => {
 };
 
 const normalizeTeam = (value) => textContent(value).replace(/\s+/g, ' ').trim();
+const truncateResponseBody = (value) => value.replace(/\s+/g, ' ').trim().slice(0, 300);
+
+class CsiFetchError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = 'CsiFetchError';
+    this.details = details;
+  }
+}
 
 const parseItalianDate = (date, time) => {
   const [day, month, shortYear] = date.split('/').map(Number);
@@ -110,15 +120,36 @@ const isScheduledTime = () => {
 };
 
 async function fetchSourceHtml() {
-  const response = await fetch(SOURCE_URL, {
-    headers: {
-      'user-agent': 'IUS-ASD-site-data-fetch/1.0',
-      accept: 'text/html,application/xhtml+xml',
-    },
-  });
+  let response;
+
+  try {
+    const referer = new URL(SOURCE_URL).origin;
+
+    response = await fetch(SOURCE_URL, {
+      headers: {
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+        accept:
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'accept-language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+        referer,
+      },
+    });
+  } catch (error) {
+    throw new CsiFetchError(`CSI source request failed: ${error.message}`, {
+      url: SOURCE_URL,
+      cause: error,
+    });
+  }
 
   if (!response.ok) {
-    throw new Error(`CSI source responded with ${response.status}`);
+    const responseBody = await response.text().catch(() => '');
+
+    throw new CsiFetchError(`CSI source responded with ${response.status}`, {
+      status: response.status,
+      url: SOURCE_URL,
+      responseBody: truncateResponseBody(responseBody),
+    });
   }
 
   return response.text();
@@ -251,11 +282,33 @@ function parseCsiData(html) {
 
 async function writeData(data) {
   await mkdir(path.dirname(outputFile), { recursive: true });
+  const fileContent = `import type { CsiTeamData } from '../types';\n\nexport const iusACsiData = ${JSON.stringify(data, null, 2)} satisfies CsiTeamData;\n`;
+
   await writeFile(
-    outputFile,
-    `import type { CsiTeamData } from '../types';\n\nexport const iusACsiData = ${JSON.stringify(data, null, 2)} satisfies CsiTeamData;\n`,
+    tempOutputFile,
+    fileContent,
     'utf8',
   );
+
+  await rename(tempOutputFile, outputFile);
+}
+
+function logCsiError(error) {
+  console.warn(`CSI data update failed: ${error.message}`);
+
+  if (error instanceof CsiFetchError) {
+    if (typeof error.details.status === 'number') {
+      console.warn(`CSI response status: ${error.details.status}`);
+    }
+
+    if (error.details.url) {
+      console.warn(`CSI request URL: ${error.details.url}`);
+    }
+
+    if (typeof error.details.responseBody === 'string') {
+      console.warn(`CSI response body preview: ${error.details.responseBody}`);
+    }
+  }
 }
 
 async function main() {
@@ -276,19 +329,22 @@ async function main() {
     console.log(`CSI data updated successfully at ${data.updated_at}`);
   } catch (error) {
     const existingData = await readExistingData();
-    const fallbackData = existingData?.available
-      ? {
-          ...existingData,
-          stale: true,
-          last_error_at: new Date().toISOString(),
-        }
-      : {
-          ...unavailableData,
-          stale: true,
-          last_error_at: new Date().toISOString(),
-        };
+    const fallbackData =
+      existingData ??
+      {
+        ...unavailableData,
+        stale: true,
+        last_error_at: new Date().toISOString(),
+      };
 
-    console.warn(`CSI data update failed: ${error.message}`);
+    logCsiError(error);
+
+    if (existingData) {
+      console.warn('CSI fallback: keeping the last valid local snapshot unchanged.');
+      return;
+    }
+
+    console.warn('CSI fallback: no existing snapshot found, writing unavailable placeholder data.');
     await writeData(fallbackData);
   }
 }
