@@ -4,8 +4,8 @@ export const iusACsiData = {
   "team": "Ius A",
   "source_url": "https://live.centrosportivoitaliano.it/25/Calcio-a-7/Lombardia/Bergamo/S1049/?j=NEU9REZIJjRGPVBOSyY0Rz1FREomNEg9RCY0ST1WJjRKPUVESE0mNDI9Zg==",
   "updated_at": "2026-04-20T14:23:42.837Z",
-  "last_error_at": null,
-  "stale": false,
+  "last_error_at": "2026-04-26T20:50:30.991Z",
+  "stale": true,
   "overview": [
     {
       "label": "Punti",
